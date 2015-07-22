@@ -92,7 +92,7 @@ int main(void)
 
     /* Initialize all configured peripherals */
     MX_GPIO_Init();
-    comm_spi_init();
+    CommInit();
     MX_USART1_UART_Init();
 
     /* USER CODE BEGIN 2 */
@@ -175,17 +175,15 @@ void SystemClock_Config(void)
 /* USART1 init function */
 void MX_USART1_UART_Init(void)
 {
-
-  huart1.Instance = USART1;
-  huart1.Init.BaudRate = 115200;
-  huart1.Init.WordLength = UART_WORDLENGTH_8B;
-  huart1.Init.StopBits = UART_STOPBITS_1;
-  huart1.Init.Parity = UART_PARITY_NONE;
-  huart1.Init.Mode = UART_MODE_TX_RX;
-  huart1.Init.HwFlowCtl = UART_HWCONTROL_NONE;
-  huart1.Init.OverSampling = UART_OVERSAMPLING_16;
-  HAL_UART_Init(&huart1);
-
+    huart1.Instance = USART1;
+    huart1.Init.BaudRate = 115200;
+    huart1.Init.WordLength = UART_WORDLENGTH_8B;
+    huart1.Init.StopBits = UART_STOPBITS_1;
+    huart1.Init.Parity = UART_PARITY_NONE;
+    huart1.Init.Mode = UART_MODE_TX_RX;
+    huart1.Init.HwFlowCtl = UART_HWCONTROL_NONE;
+    huart1.Init.OverSampling = UART_OVERSAMPLING_16;
+    HAL_UART_Init(&huart1);
 }
 
 /** Pinout Configuration
@@ -214,10 +212,6 @@ void MX_GPIO_Init(void)
 /* USER CODE BEGIN 4 */
 
 /* USER CODE END 4 */
-extern uint32_t comm_spi_intr_cnt;
-extern uint32_t comm_spi_rx_cnt;
-extern uint32_t comm_spi_tx_cnt;
-extern uint16_t comm_state;
 void StartDefaultTask(void const * argument)
 {
     argument = argument;
@@ -225,20 +219,14 @@ void StartDefaultTask(void const * argument)
     retUSER = FATFS_LinkDriver(&USER_Driver, USER_Path);
 
     /* USER CODE BEGIN 5 */
-    osDelay(2000);
-    comm_spi_enable();
     
     /* Infinite loop */
     for(;;)
     {
         osDelay(1000);
         HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_8);
-
-        printf("spi intr cnt %d, rx:%d, tx:%d state:%d\r\n", 
-            (int)comm_spi_intr_cnt, (int)comm_spi_rx_cnt, (int)comm_spi_tx_cnt, 
-            (int)comm_state);
-
-        batteryInfoShow();
+        //batteryInfoShow();
+        CommShowCnt();
     }
 
     /* USER CODE END 5 */ 

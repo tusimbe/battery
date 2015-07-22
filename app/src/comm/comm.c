@@ -3,187 +3,478 @@
  *
  * bettery mananger module.
  */
- 
+
 #include "stm32f1xx_hal.h"
 #include "cmsis_os.h"
 #include "comm.h"
 #include "bettery.h"
+#include "simpleQueue.h"
+#include "sys.h"
+
+/* C libraries: */
+#include <string.h>
 #include <stdio.h>
 
-#define  COMM_DATA_BUF_MAX           (32)
+/* Predefined COMM responses. */
+#define COMM_RESP_OK         "_OK_"
+#define COMM_RESP_FAIL       "FAIL"
 
-SPI_HandleTypeDef hspi1;
-uint16_t comm_state = COMM_STATE_READY;
-uint32_t comm_spi_intr_cnt;
-uint32_t comm_spi_rx_cnt;
-uint32_t comm_spi_tx_cnt;
+/* COMM start-of-frame signature. */
+#define COMM_MSG_SOF         0xBD
+/* Empty message ID. */
+#define COMM_MSG_NOMSG       0x00
+/* COMM buffer size in bytes.  */
+#define COMM_BUFFER_SIZE     0x80
+/* COMM message header size in bytes.  */
+#define COMM_MSG_HDR_SIZE    0x04
+/* COMM message checksum size in bytes.  */
+#define COMM_MSG_CRC_SIZE    0x04
+/* COMM message header + crc size in bytes.  */
+#define COMM_MSG_SVC_SIZE    ( COMM_MSG_HDR_SIZE + COMM_MSG_CRC_SIZE )
 
-uint8_t  comm_data[COMM_DATA_BUF_MAX];
-uint16_t  comm_data_len;
+#define COMM_IQP_BUF_SIZE     512
 
-void comm_spi_rx_isr(SPI_HandleTypeDef *hspi);
-void comm_spi_tx_isr(SPI_HandleTypeDef *hspi);
-void comm_spi_intr_hnd(SPI_HandleTypeDef *hspi);
-void SPI2_IRQHandler(void);
+/* COMM message structure. */
+typedef struct tagMessage {
+    uint8_t sof;      /* Start of frame signature. */
+    uint8_t msg_id;   /* COMM message ID. */
+    uint8_t size;     /* Size of whole COMM message including header and additional data. */
+    uint8_t res;      /* Reserved. Set to 0. */
+    uint8_t data[COMM_BUFFER_SIZE];
+    uint32_t crc;
+} __attribute__((packed)) Message, *PMessage;
 
-void comm_spi_init(void)
+/**
+ * Global variables
+ */
+/* comm input queue buf */
+uint8_t g_comm_iqp_buf[COMM_IQP_BUF_SIZE];
+
+InputQueue g_iqp;
+
+UART_HandleTypeDef huart2;
+
+CRC_HandleTypeDef hcrc;
+
+osSemaphoreId commSema;
+
+osThreadId CommTaskHandle;
+
+uint32_t g_dbgUartRxCnt;
+/**
+ * Local variables
+ */
+/* COMM message. */
+static Message msg = {
+    COMM_MSG_SOF,
+    COMM_MSG_NOMSG,
+    COMM_MSG_SVC_SIZE,
+    0,
+    { 0 },
+    0xFFFFFFFF
+};
+static uint8_t *msgPos = (uint8_t *)&msg;
+
+static size_t bytesRequired = COMM_MSG_HDR_SIZE;
+
+/* fucntion */
+void CommRxCallBack(GenericQueue *iqp);
+void CommUartTxIrqProcess(UART_HandleTypeDef *huart);
+void CommUartRxIrqProcess(UART_HandleTypeDef *huart);
+void CommUartIrqHandler(UART_HandleTypeDef *huart);
+void USART2_IRQHandler(void);
+void CommStartTask(void const *argument);
+
+/**
+ * @brief  Computes the 32-bit CRC of a given buffer of data word(32-bit).
+ * @param  pBuf: pointer to the buffer containing the data to be computed
+ * @param  length: length of the buffer to be computed
+ * @retval 32-bit CRC
+ */
+static inline uint32_t crcCRC32(uint32_t pBuf[], uint32_t length)
 {
-    hspi1.Instance = SPI2;
-    hspi1.Init.Mode = SPI_MODE_SLAVE;
-    hspi1.Init.Direction = SPI_DIRECTION_2LINES;
-    hspi1.Init.DataSize = SPI_DATASIZE_8BIT;
-    hspi1.Init.CLKPolarity = SPI_POLARITY_HIGH;
-    hspi1.Init.CLKPhase = SPI_PHASE_2EDGE;
-    hspi1.Init.NSS = SPI_NSS_SOFT;
-    hspi1.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_2;
-    hspi1.Init.FirstBit = SPI_FIRSTBIT_MSB;
-    hspi1.Init.TIMode = SPI_TIMODE_DISABLED;
-    hspi1.Init.CRCCalculation = SPI_CRCCALCULATION_DISABLED;
-    HAL_SPI_Init(&hspi1);
-
-    __HAL_SPI_ENABLE_IT(&hspi1, (SPI_IT_RXNE | SPI_IT_ERR));
+    return HAL_CRC_Calculate(&hcrc, pBuf, length);
 }
 
-void comm_spi_enable(void)
+/**
+ * @brief  Calculates CRC32 checksum of received data buffer.
+ * @param  pMsg - pointer to COMM message structure.
+ * @return CRC32 checksum of received zero-padded data buffer.
+ */
+static uint32_t CommGetCRC32Checksum(const PMessage pMsg)
 {
-    HAL_NVIC_SetPriority(SPI2_IRQn, configLIBRARY_LOWEST_INTERRUPT_PRIORITY, 0);
-    HAL_NVIC_EnableIRQ(SPI2_IRQn);
-
-    __HAL_SPI_ENABLE(&hspi1);
-}
-
-void comm_spi_rx_isr(SPI_HandleTypeDef *hspi)
-{
-    uint8_t addr;
-    int16_t ret;
-
-    comm_spi_rx_cnt++;
-    addr = hspi->Instance->DR;
-    switch (comm_state)
+    uint32_t crc_length = (pMsg->size - COMM_MSG_CRC_SIZE) / sizeof(uint32_t);
+    if ((pMsg->size - COMM_MSG_CRC_SIZE) % sizeof(uint32_t))
     {
-        case COMM_STATE_READY:
-            ret = batteryInfoGet(addr, comm_data, COMM_DATA_BUF_MAX);
-            if (ret > 0)
+        crc_length++;
+    }
+    return crcCRC32((uint32_t *)pMsg, crc_length);
+}
+
+static void CommWrite(uint8_t *pBuf, uint32_t len)
+{
+    (void)HAL_UART_Transmit(&huart2, pBuf, len, 5000);
+    return;
+}
+
+/**
+ * @brief  Sends data to selected serial port.
+ * @param  pMsg - pointer to COMM message structure to be sent.
+ * @return none.
+ */
+static void CommSendSerialData(const PMessage pMsg)
+{
+    /* Sends message header and actual data if any. */
+    CommWrite((uint8_t *)pMsg, pMsg->size - COMM_MSG_CRC_SIZE);
+    /* Sends cyclic redundancy checksum. */
+    CommWrite((uint8_t *)&pMsg->crc, COMM_MSG_CRC_SIZE);
+}
+
+/**
+ * @brief  Prepares positive COMM response.
+ * @param  pMsg - pointer to COMM message structure.
+ * @return none.
+ */
+static void CommPositiveResponse(const PMessage pMsg)
+{
+    memcpy((void *)pMsg->data, (void *)COMM_RESP_OK, sizeof(COMM_RESP_OK) - 1);
+    pMsg->size = sizeof(COMM_RESP_OK) + COMM_MSG_SVC_SIZE - 1;
+    pMsg->crc  = CommGetCRC32Checksum(pMsg);
+}
+
+/**
+ * @brief  Prepares negative COMM response.
+ * @param  pMsg - pointer to COMM message structure.
+ * @return none.
+ */
+static void CommNegativeResponse(const PMessage pMsg)
+{
+    memcpy((void *)pMsg->data, (void *)COMM_RESP_FAIL, sizeof(COMM_RESP_FAIL) - 1);
+    pMsg->size = sizeof(COMM_RESP_FAIL) + COMM_MSG_SVC_SIZE - 1;
+    pMsg->crc  = CommGetCRC32Checksum(pMsg);
+}
+
+/**
+ * @brief  Command processor.
+ * @param  pMsg - pointer to COMM message structure to be processed.
+ * @return none.
+ */
+static void CommProcessCommand(const PMessage pMsg)
+{
+    uint16_t regValue;
+
+    switch (pMsg->msg_id)
+    {
+    case 'v': /* Reads new sensor settings; */
+        batteryInfoGet(1, (uint8_t *)&regValue, sizeof(uint16_t));
+        memset(&pMsg->data, 0, COMM_BUFFER_SIZE);
+        memcpy(&pMsg->data, &regValue, sizeof(uint16_t));
+        pMsg->size = sizeof(uint16_t) + COMM_MSG_SVC_SIZE;
+        pMsg->crc = CommGetCRC32Checksum(pMsg);
+        break;
+    case 'c':
+        batteryInfoGet(2, (uint8_t *)&regValue, sizeof(uint16_t));
+        memset(&pMsg->data, 0, COMM_BUFFER_SIZE);
+        memcpy(&pMsg->data, &regValue, sizeof(uint16_t));
+        pMsg->size = sizeof(uint16_t) + COMM_MSG_SVC_SIZE;
+        pMsg->crc = CommGetCRC32Checksum(pMsg);
+        break;
+    case 's':
+        CommPositiveResponse(pMsg);
+        break;
+    default: /* Unknown command. */
+        CommNegativeResponse(pMsg);
+        break;
+    }
+    pMsg->sof = COMM_MSG_SOF;
+    pMsg->res = 0;
+    CommSendSerialData(pMsg);
+}
+
+#define IS_MSG_VALID() \
+  ((msg.sof == COMM_MSG_SOF) &&\
+  (msg.size >= COMM_MSG_SVC_SIZE) &&\
+  (msg.size <= COMM_BUFFER_SIZE))
+
+/**
+ * @brief: Try to recover from bad input data stream
+ * @note: Author of this expects that most of the time, this will be caused
+ *        by some junk stuff coming from OS (e.g. tty settings). We'll just
+ *        sync to next SOF and throw away any after packet. This means the next
+ *        (few) packet(s) may be dropped - still better than no comm...
+ */
+static void CommReadSerialDataResync(uint8_t len)
+{
+    uint8_t i;
+
+    while (len)
+    {
+        for (i = 1; i < len; i++)
+        {
+            if (((uint8_t *)&msg)[i] == COMM_MSG_SOF)
             {
-                comm_data_len = ret;
-                hspi->Instance->DR = comm_data[0];
-                comm_data_len--;
-                comm_state = COMM_STATE_MESSAGE;
+                break;
             }
+        }
+
+        if (len - i > 0)
+        {
+            memmove(&msg, &((uint8_t *)&msg)[i], len - i);
+        }
+        len -= i;
+        msgPos = (uint8_t *)&msg + len;
+
+        if (len < COMM_MSG_HDR_SIZE)
+        {
+            /* ...wait for header to get completed */
+            bytesRequired = COMM_MSG_HDR_SIZE - len;
             break;
-        case COMM_STATE_MESSAGE:
-            if (comm_data_len == 0)
+        }
+        else
+        {
+            if (IS_MSG_VALID())
             {
-                comm_state = COMM_STATE_READY;
+                if (msg.size <= len)
+                {
+                    /* This may throw away some data at the tail of buffer...*/
+                    bytesRequired = 0;
+                }
+                else
+                {
+                    bytesRequired = msg.size - len;
+                }
+                break;
+            }
+        }
+    }
+}
+
+/**
+ * @brief  Process messages received from generic serial interface driver.
+ * @return none.
+ */
+static void CommReadSerialData(void)
+{
+    uint32_t flag;
+
+    SYS_INTERRUPTS_DISABLE(flag);
+    /* The following function must be called from within a system lock zone. */
+    size_t bytesAvailable = chQSpaceI(&g_iqp);
+    SYS_INTERRUPTS_ENABLE(flag);
+
+    while (bytesAvailable)
+    {
+        if (bytesAvailable >= bytesRequired)
+        {
+            if (bytesRequired > 0)
+            {
+                chIQRead(&g_iqp, msgPos, bytesRequired);
+                msgPos += bytesRequired;
+                bytesAvailable -= bytesRequired;
+                bytesRequired = 0;
+            }
+        }
+        else
+        {
+            chIQRead(&g_iqp, msgPos, bytesAvailable);
+            msgPos += bytesAvailable;
+            bytesRequired -= bytesAvailable;
+            break;
+        }
+
+        size_t curReadLen = msgPos - (uint8_t *)&msg;
+        if (!IS_MSG_VALID())
+        {
+            CommReadSerialDataResync(curReadLen);
+        }
+        else if (curReadLen == COMM_MSG_HDR_SIZE)
+        {
+            bytesRequired = msg.size - COMM_MSG_HDR_SIZE;
+        }
+        else if (bytesRequired == 0)
+        {
+            /* Whole packet is read, check and process it... */
+            /* Move CRC */
+            memmove(&msg.crc, (uint8_t *)&msg + msg.size - COMM_MSG_CRC_SIZE,
+                    COMM_MSG_CRC_SIZE);
+            /* Zero-out unused data for crc32 calculation. */
+            memset(&msg.data[msg.size - COMM_MSG_SVC_SIZE], 0,
+                   COMM_BUFFER_SIZE - msg.size + COMM_MSG_SVC_SIZE);
+
+            if (msg.crc == CommGetCRC32Checksum(&msg))
+            {
+                CommProcessCommand(&msg);
             }
             else
             {
-                hspi->Instance->DR = comm_data[1];
-                comm_data_len--;
+                uint8_t i;
+                for (i = 0; i < 1; i++)
+                {
+                    osDelay(800);
+                }
             }
-            break;
-        default:
-            break;
-    }
 
-    hspi->ErrorCode = HAL_SPI_ERROR_NONE;
+            /* Read another packet...*/
+            bytesRequired = COMM_MSG_HDR_SIZE;
+            msgPos = (uint8_t *)&msg;
+        }
+    }
+}
+
+void CommRxCallBack(GenericQueue *iqp)
+{
+    iqp = iqp;
     
+    (void)osSemaphoreRelease(commSema);
+    return;
 }
 
-void comm_spi_tx_isr(SPI_HandleTypeDef *hspi)
+void CommStartTask(void const *argument)
 {
-    comm_spi_tx_cnt++;
-    hspi->Instance->DR = 0x22;
-    /*
-    switch (comm_state)
+    argument = argument;
+    for (;;)
     {
-        case COMM_STATE_READY:
-            hspi->Instance->DR = comm_data[1];
-            break;
-        case COMM_STATE_MESSAGE:
-            if (comm_data_len == 0)
-            {
-                hspi->Instance->DR = comm_data[1];
-                //__HAL_SPI_DISABLE_IT(&hspi1, SPI_IT_TXE);
-                //comm_state = COMM_STATE_READY;
-            }
-            else
-            {
-                hspi->Instance->DR = 0x11;
-                //hspi->pTxBuffPtr++;
-                comm_data_len--;
-            }
-            break;
-        default:
-            hspi->Instance->DR = 0xff;
-            break;
+        osDelay(2);
+        CommReadSerialData();
     }
-    */
-    hspi->ErrorCode = HAL_SPI_ERROR_NONE;
 }
 
-void comm_spi_intr_hnd(SPI_HandleTypeDef *hspi)
+void CommInit(void)
 {
-    /* SPI in mode Receiver and Overrun not occurred ---------------------------*/
-    if((__HAL_SPI_GET_IT_SOURCE(hspi, SPI_IT_RXNE) != RESET) 
-    && (__HAL_SPI_GET_FLAG(hspi, SPI_FLAG_RXNE) != RESET) 
-    && (__HAL_SPI_GET_FLAG(hspi, SPI_FLAG_OVR) == RESET))
+    huart2.Instance = USART2;
+    huart2.Init.BaudRate = 115200;
+    huart2.Init.WordLength = UART_WORDLENGTH_8B;
+    huart2.Init.StopBits = UART_STOPBITS_1;
+    huart2.Init.Parity = UART_PARITY_NONE;
+    huart2.Init.Mode = UART_MODE_TX_RX;
+    huart2.Init.HwFlowCtl = UART_HWCONTROL_NONE;
+    huart2.Init.OverSampling = UART_OVERSAMPLING_16;
+    HAL_UART_Init(&huart2);
+
+    chIQInit(&g_iqp, g_comm_iqp_buf, COMM_IQP_BUF_SIZE, NULL);
+
+    osSemaphoreDef(COMM_SEMA);
+    commSema = osSemaphoreEmptyCreate(osSemaphore(COMM_SEMA));
+    if (NULL == commSema)
     {
-        //printf("r");
-        comm_spi_rx_isr(hspi);
+        printf("[%s, L%d] create semaphore failed!\r\n", __FILE__, __LINE__);
         return;
     }
 
-    /* SPI in mode Tramitter ---------------------------------------------------*/
-    if((__HAL_SPI_GET_IT_SOURCE(hspi, SPI_IT_TXE) != RESET) 
-    && (__HAL_SPI_GET_FLAG(hspi, SPI_FLAG_TXE) != RESET))
+    osThreadDef(CommTask, CommStartTask, osPriorityAboveNormal, 0, 1024);
+    CommTaskHandle = osThreadCreate(osThread(CommTask), NULL);
+    if (NULL == CommTaskHandle)
     {
-        comm_spi_tx_isr(hspi);
-        //printf("t");
+        printf("[%s, L%d] create thread failed!\r\n", __FILE__, __LINE__);
         return;
     }
 
-    if(__HAL_SPI_GET_IT_SOURCE(hspi, SPI_IT_ERR) != RESET)
+    HAL_NVIC_SetPriority(USART2_IRQn, configLIBRARY_LOWEST_INTERRUPT_PRIORITY, 0);
+    HAL_NVIC_EnableIRQ(USART2_IRQn);
+
+    __HAL_UART_ENABLE_IT(&huart2, UART_IT_RXNE);
+    return;
+}
+
+void CommUartIrqHandler(UART_HandleTypeDef *huart)
+{
+    uint32_t tmp_flag = 0, tmp_it_source = 0;
+
+    tmp_flag = __HAL_UART_GET_FLAG(huart, UART_FLAG_PE);
+    tmp_it_source = __HAL_UART_GET_IT_SOURCE(huart, UART_IT_PE);
+    /* UART parity error interrupt occurred ------------------------------------*/
+    if ((tmp_flag != RESET) && (tmp_it_source != RESET))
     {
-        //printf("e");
-        /* SPI CRC error interrupt occurred ---------------------------------------*/
-        if(__HAL_SPI_GET_FLAG(hspi, SPI_FLAG_CRCERR) != RESET)
-        {
-            SET_BIT(hspi->ErrorCode, HAL_SPI_ERROR_CRC);
-            __HAL_SPI_CLEAR_CRCERRFLAG(hspi);
-        }
-        
-        /* SPI Mode Fault error interrupt occurred --------------------------------*/
-        if(__HAL_SPI_GET_FLAG(hspi, SPI_FLAG_MODF) != RESET)
-        {
-            SET_BIT(hspi->ErrorCode, HAL_SPI_ERROR_MODF);
-            __HAL_SPI_CLEAR_MODFFLAG(hspi);
-        }
+        __HAL_UART_CLEAR_PEFLAG(huart);
 
-        /* SPI Overrun error interrupt occurred -----------------------------------*/
-        if(__HAL_SPI_GET_FLAG(hspi, SPI_FLAG_OVR) != RESET)
-        {
-            if(hspi->State != HAL_SPI_STATE_BUSY_TX)
-            {
-                SET_BIT(hspi->ErrorCode, HAL_SPI_ERROR_OVR);
-                __HAL_SPI_CLEAR_OVRFLAG(hspi);      
-            }
-        }
+        huart->ErrorCode |= HAL_UART_ERROR_PE;
+    }
 
-        /* Call the Error call Back in case of Errors */
-        if(hspi->ErrorCode!=HAL_SPI_ERROR_NONE)
-        {
-            //printf("dis intr\r\n");
-            //__HAL_SPI_DISABLE_IT(hspi, SPI_IT_RXNE | SPI_IT_TXE | SPI_IT_ERR);
-            hspi->State = HAL_SPI_STATE_READY;
-            HAL_SPI_ErrorCallback(hspi);
-        }
+    tmp_flag = __HAL_UART_GET_FLAG(huart, UART_FLAG_FE);
+    tmp_it_source = __HAL_UART_GET_IT_SOURCE(huart, UART_IT_ERR);
+    /* UART frame error interrupt occurred -------------------------------------*/
+    if ((tmp_flag != RESET) && (tmp_it_source != RESET))
+    {
+        __HAL_UART_CLEAR_FEFLAG(huart);
+
+        huart->ErrorCode |= HAL_UART_ERROR_FE;
+    }
+
+    tmp_flag = __HAL_UART_GET_FLAG(huart, UART_FLAG_NE);
+    /* UART noise error interrupt occurred -------------------------------------*/
+    if ((tmp_flag != RESET) && (tmp_it_source != RESET))
+    {
+        __HAL_UART_CLEAR_NEFLAG(huart);
+
+        huart->ErrorCode |= HAL_UART_ERROR_NE;
+    }
+
+    tmp_flag = __HAL_UART_GET_FLAG(huart, UART_FLAG_ORE);
+    /* UART Over-Run interrupt occurred ----------------------------------------*/
+    if ((tmp_flag != RESET) && (tmp_it_source != RESET))
+    {
+        __HAL_UART_CLEAR_OREFLAG(huart);
+
+        huart->ErrorCode |= HAL_UART_ERROR_ORE;
+    }
+
+    tmp_flag = __HAL_UART_GET_FLAG(huart, UART_FLAG_RXNE);
+    tmp_it_source = __HAL_UART_GET_IT_SOURCE(huart, UART_IT_RXNE);
+    /* UART in mode Receiver ---------------------------------------------------*/
+    if ((tmp_flag != RESET) && (tmp_it_source != RESET))
+    {
+        CommUartRxIrqProcess(huart);
+    }
+
+    tmp_flag = __HAL_UART_GET_FLAG(huart, UART_FLAG_TXE);
+    tmp_it_source = __HAL_UART_GET_IT_SOURCE(huart, UART_IT_TXE);
+    /* UART in mode Transmitter ------------------------------------------------*/
+    if ((tmp_flag != RESET) && (tmp_it_source != RESET))
+    {
+        CommUartTxIrqProcess(huart);
+    }
+
+    tmp_flag = __HAL_UART_GET_FLAG(huart, UART_FLAG_TC);
+    tmp_it_source = __HAL_UART_GET_IT_SOURCE(huart, UART_IT_TC);
+    /* UART in mode Transmitter end --------------------------------------------*/
+    if ((tmp_flag != RESET) && (tmp_it_source != RESET))
+    {
+
+    }
+
+    if (huart->ErrorCode != HAL_UART_ERROR_NONE)
+    {
+        /* Set the UART state ready to be able to start again the process */
+        huart->State = HAL_UART_STATE_READY;
+
+        HAL_UART_ErrorCallback(huart);
     }
 }
 
-
-void SPI2_IRQHandler(void)
+void CommUartTxIrqProcess(UART_HandleTypeDef *huart)
 {
-    comm_spi_intr_cnt++;
-    comm_spi_intr_hnd(&hspi1);
+    huart = huart;
+    return;
 }
+
+void CommUartRxIrqProcess(UART_HandleTypeDef *huart)
+{
+    uint8_t b;
+
+    g_dbgUartRxCnt++;
+    b = huart->Instance->DR & 0xff;
+    chIQPutI(&g_iqp, b);
+    return;
+}
+
+void CommShowCnt(void)
+{
+    printf("Uart rx bytes:%lu\r\n", g_dbgUartRxCnt);
+    return;
+}
+
+void USART2_IRQHandler(void)
+{
+    CommUartIrqHandler(&huart2);
+}
+

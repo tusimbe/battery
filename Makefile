@@ -77,7 +77,7 @@ SRCDIRS   = ./freertos/src \
             ./drivers/CMSIS/src \
             ./drivers/STM32F1xx_HAL_Driver/src \
             ./app/src/filesys \
-	        ./app/src/key \
+	    ./app/src/key \
             ./app/src/system \
             ./app/src/main \
             ./target/miniv3 \
@@ -85,7 +85,8 @@ SRCDIRS   = ./freertos/src \
             ./drivers/i2c \
             ./drivers/bq40z50 \
             ./app/src/bettery \
-            ./app/src/comm 
+            ./app/src/comm \
+	    ./misc 
 
 # The include directiories
 INCDIRS  = -I./freertos/inc \
@@ -96,7 +97,8 @@ INCDIRS  = -I./freertos/inc \
            -I./drivers/flash/inc \
            -I./drivers/lcd/inc \
            -I./drivers/i2c \
-           -I./drivers/bq40z50 
+           -I./drivers/bq40z50 \
+	   -I./misc 
 
 # The ld scripts
 LDSCRIPT = ./script/STM32F103XE_FLASH.ld
