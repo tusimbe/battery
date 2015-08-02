@@ -64,12 +64,10 @@ void chIQInit(InputQueue *iqp, uint8_t *bp, size_t size, qnotify_t infy)
  */
 void chIQResetI(InputQueue *iqp) 
 {
-    uint32_t flag;
-
-    SYS_INTERRUPTS_DISABLE(flag);
+    SYS_INTERRUPTS_DISABLE();
     iqp->q_rdptr = iqp->q_wrptr = iqp->q_buffer;
     iqp->q_counter = 0;
-    SYS_INTERRUPTS_ENABLE(flag);
+    SYS_INTERRUPTS_ENABLE();
 }
 
 /**
@@ -132,13 +130,12 @@ int32_t chIQPutI(InputQueue *iqp, uint8_t b)
 int32_t chIQGet(InputQueue *iqp) 
 {
     uint8_t b;
-    uint32_t flag;
 
-    SYS_INTERRUPTS_DISABLE(flag);
+    SYS_INTERRUPTS_DISABLE();
 
     if (chIQIsEmptyI(iqp)) 
     {
-        SYS_INTERRUPTS_ENABLE(flag);
+        SYS_INTERRUPTS_ENABLE();
         return Q_EMPTY;
     }
 
@@ -149,7 +146,7 @@ int32_t chIQGet(InputQueue *iqp)
         iqp->q_rdptr = iqp->q_buffer;
     }
 
-    SYS_INTERRUPTS_ENABLE(flag);
+    SYS_INTERRUPTS_ENABLE();
     return b;
 }
 
@@ -180,13 +177,12 @@ int32_t chIQGet(InputQueue *iqp)
 int32_t chIQRead(InputQueue *iqp, uint8_t *bp, size_t n) 
 {
     size_t r = 0;
-    uint32_t flag;
 
-    SYS_INTERRUPTS_DISABLE(flag);
+    SYS_INTERRUPTS_DISABLE();
 
     if (chQSpaceI(iqp) < n) 
     {
-        SYS_INTERRUPTS_ENABLE(flag);
+        SYS_INTERRUPTS_ENABLE();
         return Q_EMPTY;
     }
 
@@ -199,14 +195,14 @@ int32_t chIQRead(InputQueue *iqp, uint8_t *bp, size_t n)
             iqp->q_rdptr = iqp->q_buffer;
         }
 
-        SYS_INTERRUPTS_ENABLE(flag); /* Gives a preemption chance in a controlled point.*/
+        SYS_INTERRUPTS_ENABLE(); /* Gives a preemption chance in a controlled point.*/
         r++;
         if (--n == 0)
         {
             return r;
         }
 
-        SYS_INTERRUPTS_DISABLE(flag);
+        SYS_INTERRUPTS_DISABLE();
     }
 }
 

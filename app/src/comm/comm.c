@@ -263,18 +263,15 @@ static void CommReadSerialDataResync(uint8_t len)
  */
 static void CommReadSerialData(void)
 {
-    uint32_t flag;
     uint32_t crc_packet;
 
-    SYS_INTERRUPTS_DISABLE(flag);
+    SYS_INTERRUPTS_DISABLE();
     /* The following function must be called from within a system lock zone. */
     size_t bytesAvailable = chQSpaceI(&g_iqp);
-    SYS_INTERRUPTS_ENABLE(flag);
+    SYS_INTERRUPTS_ENABLE();
 
-    //printf("bas:%d\r\n", bytesAvailable);
     while (bytesAvailable)
     {
-        printf("bas:%d, req:%d\r\n", bytesAvailable, bytesRequired);
         if (bytesAvailable >= bytesRequired)
         {
             if (bytesRequired > 0)
@@ -284,7 +281,6 @@ static void CommReadSerialData(void)
                     printf("[%s, L%d] read queue failed.\r\n", __FILE__, __LINE__);
                 }
                 msgPos += bytesRequired;
-                CommPrintMsg(msgPos - (uint8_t *)&msg);
                 bytesAvailable -= bytesRequired;
                 bytesRequired = 0;
             }
@@ -297,15 +293,12 @@ static void CommReadSerialData(void)
             }
             msgPos += bytesAvailable;
             bytesRequired -= bytesAvailable;
-            CommPrintMsg(msgPos - (uint8_t *)&msg);
             break;
         }
 
         size_t curReadLen = msgPos - (uint8_t *)&msg;
         if (!IS_MSG_VALID())
         {
-            printf("inv\r\n");
-            CommPrintMsg(curReadLen);
             CommReadSerialDataResync(curReadLen);
         }
         else if (curReadLen == COMM_MSG_HDR_SIZE)
@@ -324,13 +317,12 @@ static void CommReadSerialData(void)
 
             if (msg.crc == (crc_packet = CommGetCRC32Checksum(&msg)))
             {
-                printf("crc ok:0x%08x 0x%08x\r\n", msg.crc, crc_packet);
                 CommProcessCommand(&msg);
             }
             else
             {
                 CommPrintMsg(curReadLen);
-                printf("crc error:0x%08x 0x%08x\r\n", msg.crc, crc_packet);
+                printf("crc error:0x%08x 0x%08x\r\n", (unsigned int)msg.crc, (unsigned int)crc_packet);
             }
 
             /* Read another packet...*/
@@ -528,5 +520,7 @@ void USART2_IRQHandler(void)
 
 void CommPrintMsg(size_t len)
 {
-    printf("msglen:%d, msg:%02x %02x %02x %02x %08x\r\n", len, msg.sof, msg.msg_id, msg.size, msg.res, msg.crc);
+    printf("msglen:%d, msg:%02x %02x %02x %02x %08x\r\n", 
+           len, (unsigned int)msg.sof, (unsigned int)msg.msg_id, 
+           (unsigned int)msg.size, (unsigned int)msg.res, (unsigned int)msg.crc);
 }

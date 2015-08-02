@@ -19,7 +19,7 @@
     } while (0)
 */
 
-#define SYS_INTERRUPTS_DISABLE(flag)  __disable_irq()
-#define SYS_INTERRUPTS_ENABLE(flag)   __enable_irq()
+#define SYS_INTERRUPTS_DISABLE()  __disable_irq()
+#define SYS_INTERRUPTS_ENABLE()   __enable_irq()
 
 #endif

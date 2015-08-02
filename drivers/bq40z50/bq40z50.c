@@ -82,7 +82,7 @@ void smb_Ack(I2C_INSTANCE_STRU *i2c)
     SCLL(i2c);
     SDA_OUT(i2c);
     SDAL(i2c);
-    
+
     smb_delay_us(8);
     SCLH(i2c);
     smb_delay_us(8);
@@ -98,7 +98,7 @@ void smb_NoAck(I2C_INSTANCE_STRU *i2c)
     SCLL(i2c);
     SDA_OUT(i2c);
     SDAH(i2c);
-    
+
     smb_delay_us(8);
     SCLH(i2c);
     smb_delay_us(8);
@@ -116,8 +116,8 @@ void smb_SendByte(I2C_INSTANCE_STRU *i2c, uint8_t SendByte)
     SDA_OUT(i2c);
     SCL_OUT(i2c);
     SCLL(i2c);
-    
-    for(i = 0; i < 8; i++)
+
+    for (i = 0; i < 8; i++)
     {
         if (txd & 0x80)
         {
@@ -128,13 +128,13 @@ void smb_SendByte(I2C_INSTANCE_STRU *i2c, uint8_t SendByte)
             SDAL(i2c);
         }
 
-        txd <<= 1; 	  
+        txd <<= 1;
         smb_delay_us(8);
         SCLH(i2c);
-        smb_delay_us(8); 
-        SCLL(i2c);	    
+        smb_delay_us(8);
+        SCLL(i2c);
         //smb_delay_us(8);
-    }	 
+    }
 
     SCLL(i2c);
     smb_delay_us(8);
@@ -148,31 +148,31 @@ uint8_t smb_ReceiveByte(I2C_INSTANCE_STRU *i2c)
     SDA_IN(i2c);
     SCL_OUT(i2c);
 
-    for(i = 0; i < 8; i++)
+    for (i = 0; i < 8; i++)
     {
         SCLH(i2c);
         smb_delay_us(8);
-        
-        if(SDA(i2c))
+
+        if (SDA(i2c))
         {
             ReceiveByte++;
         }
-	    
+
         if (i < 7)
-        {					
-            ReceiveByte<<=1;
+        {
+            ReceiveByte <<= 1;
         }
-        
+
         SCLL(i2c);
         smb_delay_us(8);
-    }					 
+    }
     return ReceiveByte;
 }
 
 void smb_WaitAck(I2C_INSTANCE_STRU *i2c)
 {
     uint16_t cnt = 0;
-    
+
     smb_delay_us(8);
     SDAH(i2c);
     SDA_IN(i2c);
@@ -208,29 +208,24 @@ void smb_WaitAck(I2C_INSTANCE_STRU *i2c)
 void bq40z50_init(void)
 {
     int32_t ret;
-    
+
     I2C_WIRE_STRU i2c_wire;
     i2c_wire.scl.port = GPIOC;
     i2c_wire.scl.port_num = GPIO_PIN_12;
     i2c_wire.sda.port = GPIOC;
     i2c_wire.sda.port_num = GPIO_PIN_11;
-    
+
     ret = i2c_init(&bq40z50_i2c, &i2c_wire);
     if (I2C_RET_OK != ret)
     {
-        printf("[%s, L%d] i2c_init failed, ret %d.\r\n", 
-            __FILE__, __LINE__, (int)ret);
+        printf("[%s, L%d] i2c_init failed, ret %d.\r\n",
+               __FILE__, __LINE__, (int)ret);
     }
 
     return;
 }
 
-int16_t bq40z50_word_read
-(
-    uint8_t addr, 
-    uint8_t cmd,
-    uint16_t *val
-)
+int16_t bq40z50_word_read(uint8_t addr, uint8_t cmd, uint16_t *val)
 {
     uint8_t buf[2];
     uint8_t  pec;
@@ -238,14 +233,14 @@ int16_t bq40z50_word_read
     smb_Start(&bq40z50_i2c);
     smb_SendByte(&bq40z50_i2c, addr);
     smb_WaitAck(&bq40z50_i2c);
-	  
+
     smb_SendByte(&bq40z50_i2c, cmd);
     smb_WaitAck(&bq40z50_i2c);
-    
+
     smb_Start(&bq40z50_i2c);
     smb_SendByte(&bq40z50_i2c, (addr) | 0x01);
     smb_WaitAck(&bq40z50_i2c);
-	
+
     buf[0] = smb_ReceiveByte(&bq40z50_i2c);
     smb_Ack(&bq40z50_i2c);
 
@@ -254,10 +249,10 @@ int16_t bq40z50_word_read
 
     pec = smb_ReceiveByte(&bq40z50_i2c);
     smb_NoAck(&bq40z50_i2c);
-    
+
     smb_Stop(&bq40z50_i2c);
 
-    if (pec == smb_getPec(addr, cmd, 1, buf, 2)) 
+    if (pec == smb_getPec(addr, cmd, 1, buf, 2))
     {
         *val = (buf[1] << 8) | buf[0];
         return 0;
@@ -266,36 +261,28 @@ int16_t bq40z50_word_read
     {
         *val = 0xffff;
         return -1;
-    }	
+    }
 }
 
-uint8_t bq40z50_block_read
-(
-    uint8_t addr, 
-    uint8_t cmd, 
-    uint8_t *buf
-)
+uint8_t bq40z50_block_read(uint8_t addr, uint8_t cmd, uint8_t *buf)
 {
     uint8_t len = 0;
     uint8_t i;
     uint8_t *ptr = buf;
-    uint32_t flag;
 
-    SYS_INTERRUPTS_DISABLE(flag);
-	
     smb_Start(&bq40z50_i2c);
     smb_SendByte(&bq40z50_i2c, addr);
     smb_WaitAck(&bq40z50_i2c);
-	  
+
     smb_SendByte(&bq40z50_i2c, cmd);
     smb_WaitAck(&bq40z50_i2c);
 
     smb_Start(&bq40z50_i2c);
     smb_SendByte(&bq40z50_i2c, (addr) | 0x01);
     smb_WaitAck(&bq40z50_i2c);
-	
-    len = smb_ReceiveByte(&bq40z50_i2c);	
-	smb_Ack(&bq40z50_i2c);
+
+    len = smb_ReceiveByte(&bq40z50_i2c);
+    smb_Ack(&bq40z50_i2c);
     for (i = 0; i < len; i++)
     {
         if (i < len - 1)
@@ -308,65 +295,45 @@ uint8_t bq40z50_block_read
             *ptr = smb_ReceiveByte(&bq40z50_i2c);
             smb_NoAck(&bq40z50_i2c);
         }
-    	ptr++;
+        ptr++;
     }
-    
+
     smb_Stop(&bq40z50_i2c);
-    SYS_INTERRUPTS_ENABLE(flag);
     return len;
 }
 
-void bq40z50_word_write
-(
-    uint8_t addr, 
-    uint8_t cmd, 
-    uint8_t *buf
-)
+void bq40z50_word_write(uint8_t addr, uint8_t cmd, uint8_t *buf)
 {
-	uint8_t *ptr = buf;
-    uint32_t flag;
+    uint8_t *ptr = buf;
 
-    //SYS_INTERRUPTS_DISABLE(flag);
-	
-	smb_Start(&bq40z50_i2c);
-	smb_SendByte(&bq40z50_i2c, addr);
-	smb_WaitAck(&bq40z50_i2c);
-	
-	smb_SendByte(&bq40z50_i2c, cmd);
-	smb_WaitAck(&bq40z50_i2c);
-	
-	smb_SendByte(&bq40z50_i2c, *ptr);
-	smb_WaitAck(&bq40z50_i2c);
-	ptr++;
-	
-	smb_SendByte(&bq40z50_i2c, *ptr);
-	smb_WaitAck(&bq40z50_i2c);
-	
-	smb_Stop(&bq40z50_i2c);
+    smb_Start(&bq40z50_i2c);
+    smb_SendByte(&bq40z50_i2c, addr);
+    smb_WaitAck(&bq40z50_i2c);
 
-    //SYS_INTERRUPTS_ENABLE(flag);
+    smb_SendByte(&bq40z50_i2c, cmd);
+    smb_WaitAck(&bq40z50_i2c);
+
+    smb_SendByte(&bq40z50_i2c, *ptr);
+    smb_WaitAck(&bq40z50_i2c);
+    ptr++;
+
+    smb_SendByte(&bq40z50_i2c, *ptr);
+    smb_WaitAck(&bq40z50_i2c);
+
+    smb_Stop(&bq40z50_i2c);
 }
 
-void bq40z50_block_write
-(
-    uint8_t addr, 
-    uint8_t cmd, 
-    uint8_t *buf, 
-    uint8_t len
-)
+void bq40z50_block_write(uint8_t addr, uint8_t cmd, uint8_t *buf, uint8_t len)
 {
     uint8_t i;
     uint8_t *ptr = buf;
-    uint32_t flag;
 
-    SYS_INTERRUPTS_DISABLE(flag);
+    smb_Start(&bq40z50_i2c);
+    smb_SendByte(&bq40z50_i2c, addr);
+    smb_WaitAck(&bq40z50_i2c);
 
-	smb_Start(&bq40z50_i2c);
-	smb_SendByte(&bq40z50_i2c, addr);
-	smb_WaitAck(&bq40z50_i2c);
-	
-	smb_SendByte(&bq40z50_i2c, cmd);
-	smb_WaitAck(&bq40z50_i2c);
+    smb_SendByte(&bq40z50_i2c, cmd);
+    smb_WaitAck(&bq40z50_i2c);
 
     smb_SendByte(&bq40z50_i2c, len);
     smb_WaitAck(&bq40z50_i2c);
@@ -379,38 +346,26 @@ void bq40z50_block_write
     }
 
     smb_Stop(&bq40z50_i2c);
-
-    SYS_INTERRUPTS_ENABLE(flag);
     return;
 }
 
-void bq40z50_command_send
-(
-    uint8_t addr, 
-    uint8_t cmd
-)
+void bq40z50_command_send(uint8_t addr, uint8_t cmd)
 {
-    uint32_t flag;
+    smb_Start(&bq40z50_i2c);
+    smb_SendByte(&bq40z50_i2c, addr);
+    smb_WaitAck(&bq40z50_i2c);
 
-    //SYS_INTERRUPTS_DISABLE(flag);
+    smb_SendByte(&bq40z50_i2c, cmd);
+    smb_WaitAck(&bq40z50_i2c);
 
-	smb_Start(&bq40z50_i2c);
-	smb_SendByte(&bq40z50_i2c, addr);
-	smb_WaitAck(&bq40z50_i2c);
+    smb_Stop(&bq40z50_i2c);
 
-	smb_SendByte(&bq40z50_i2c, cmd);
-	smb_WaitAck(&bq40z50_i2c);
-	
-	smb_Stop(&bq40z50_i2c);
-
-    //SYS_INTERRUPTS_ENABLE(flag);
-	
-	return;
+    return;
 }
 
 void smb_errorShow(void)
 {
-    printf("smb err cnt:%d\r\n", bq40z50_i2c.error_cnt);
+    printf("smb err cnt:%u\r\n", (unsigned int)bq40z50_i2c.error_cnt);
 }
 
 uint8_t smb_getPec(uint8_t addr, uint8_t cmd, uint8_t reading, uint8_t *buf, uint8_t len)
@@ -418,7 +373,7 @@ uint8_t smb_getPec(uint8_t addr, uint8_t cmd, uint8_t reading, uint8_t *buf, uin
     uint8_t tmp_buff[32];
     uint8_t i, j;
 
-    if (len + 3 > 32) 
+    if (len + 3 > 32)
     {
         return 0;
     }
@@ -430,23 +385,26 @@ uint8_t smb_getPec(uint8_t addr, uint8_t cmd, uint8_t reading, uint8_t *buf, uin
     memcpy(&tmp_buff[3], buf, len);
 
     // initialise crc to zero
-	uint8_t crc = 0;
-	uint8_t shift_reg = 0;
-	uint8_t do_invert;
+    uint8_t crc = 0;
+    uint8_t shift_reg = 0;
+    uint8_t do_invert;
 
-	// for each byte in the stream
-	for (i = 0; i < len + 3; i++) {
-		// load next data byte into the shift register
-		shift_reg = tmp_buff[i];
-		// for each bit in the current byte
-		for (j = 0; j < 8; j++) {
-			do_invert = (crc ^ shift_reg) & 0x80;
-			crc <<= 1;
-			shift_reg <<= 1;
-			if (do_invert) {
-				crc ^= BATT_SMBUS_PEC_POLYNOMIAL;
-			}
-		}
-	}
+    // for each byte in the stream
+    for (i = 0; i < len + 3; i++)
+    {
+        // load next data byte into the shift register
+        shift_reg = tmp_buff[i];
+        // for each bit in the current byte
+        for (j = 0; j < 8; j++)
+        {
+            do_invert = (crc ^ shift_reg) & 0x80;
+            crc <<= 1;
+            shift_reg <<= 1;
+            if (do_invert)
+            {
+                crc ^= BATT_SMBUS_PEC_POLYNOMIAL;
+            }
+        }
+    }
     return crc;
 }
