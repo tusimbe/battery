@@ -84,6 +84,7 @@ void CommUartRxIrqProcess(UART_HandleTypeDef *huart);
 void CommUartIrqHandler(UART_HandleTypeDef *huart);
 void USART2_IRQHandler(void);
 void CommStartTask(void const *argument);
+void CommPrintMsg(size_t len);
 
 /**
  * @brief  Computes the 32-bit CRC of a given buffer of data word(32-bit).
@@ -179,6 +180,13 @@ static void CommProcessCommand(const PMessage pMsg)
         pMsg->size = sizeof(uint16_t) + COMM_MSG_SVC_SIZE;
         pMsg->crc = CommGetCRC32Checksum(pMsg);
         break;
+    case 'p':
+        batteryInfoGet(5, (uint8_t *)&regValue, sizeof(uint16_t));
+        memset(&pMsg->data, 0, COMM_BUFFER_SIZE);
+        memcpy(&pMsg->data, &regValue, sizeof(uint16_t));
+        pMsg->size = sizeof(uint16_t) + COMM_MSG_SVC_SIZE;
+        pMsg->crc = CommGetCRC32Checksum(pMsg);
+        break;
     case 's':
         CommPositiveResponse(pMsg);
         break;
@@ -256,35 +264,48 @@ static void CommReadSerialDataResync(uint8_t len)
 static void CommReadSerialData(void)
 {
     uint32_t flag;
+    uint32_t crc_packet;
 
     SYS_INTERRUPTS_DISABLE(flag);
     /* The following function must be called from within a system lock zone. */
     size_t bytesAvailable = chQSpaceI(&g_iqp);
     SYS_INTERRUPTS_ENABLE(flag);
 
+    //printf("bas:%d\r\n", bytesAvailable);
     while (bytesAvailable)
     {
+        printf("bas:%d, req:%d\r\n", bytesAvailable, bytesRequired);
         if (bytesAvailable >= bytesRequired)
         {
             if (bytesRequired > 0)
             {
-                chIQRead(&g_iqp, msgPos, bytesRequired);
+                if (chIQRead(&g_iqp, msgPos, bytesRequired) < 0)
+                {
+                    printf("[%s, L%d] read queue failed.\r\n", __FILE__, __LINE__);
+                }
                 msgPos += bytesRequired;
+                CommPrintMsg(msgPos - (uint8_t *)&msg);
                 bytesAvailable -= bytesRequired;
                 bytesRequired = 0;
             }
         }
         else
         {
-            chIQRead(&g_iqp, msgPos, bytesAvailable);
+            if (chIQRead(&g_iqp, msgPos, bytesAvailable) < 0)
+            {
+                printf("[%s, L%d] read queue failed.\r\n", __FILE__, __LINE__);
+            }
             msgPos += bytesAvailable;
             bytesRequired -= bytesAvailable;
+            CommPrintMsg(msgPos - (uint8_t *)&msg);
             break;
         }
 
         size_t curReadLen = msgPos - (uint8_t *)&msg;
         if (!IS_MSG_VALID())
         {
+            printf("inv\r\n");
+            CommPrintMsg(curReadLen);
             CommReadSerialDataResync(curReadLen);
         }
         else if (curReadLen == COMM_MSG_HDR_SIZE)
@@ -301,17 +322,15 @@ static void CommReadSerialData(void)
             memset(&msg.data[msg.size - COMM_MSG_SVC_SIZE], 0,
                    COMM_BUFFER_SIZE - msg.size + COMM_MSG_SVC_SIZE);
 
-            if (msg.crc == CommGetCRC32Checksum(&msg))
+            if (msg.crc == (crc_packet = CommGetCRC32Checksum(&msg)))
             {
+                printf("crc ok:0x%08x 0x%08x\r\n", msg.crc, crc_packet);
                 CommProcessCommand(&msg);
             }
             else
             {
-                uint8_t i;
-                for (i = 0; i < 1; i++)
-                {
-                    osDelay(800);
-                }
+                CommPrintMsg(curReadLen);
+                printf("crc error:0x%08x 0x%08x\r\n", msg.crc, crc_packet);
             }
 
             /* Read another packet...*/
@@ -334,7 +353,7 @@ void CommStartTask(void const *argument)
     argument = argument;
     for (;;)
     {
-        osDelay(2);
+        osDelay(10);
         CommReadSerialData();
     }
 }
@@ -342,7 +361,7 @@ void CommStartTask(void const *argument)
 void CommInit(void)
 {
     huart2.Instance = USART2;
-    huart2.Init.BaudRate = 115200;
+    huart2.Init.BaudRate = 57600;
     huart2.Init.WordLength = UART_WORDLENGTH_8B;
     huart2.Init.StopBits = UART_STOPBITS_1;
     huart2.Init.Parity = UART_PARITY_NONE;
@@ -350,6 +369,9 @@ void CommInit(void)
     huart2.Init.HwFlowCtl = UART_HWCONTROL_NONE;
     huart2.Init.OverSampling = UART_OVERSAMPLING_16;
     HAL_UART_Init(&huart2);
+
+    hcrc.Instance = CRC;
+    HAL_CRC_Init(&hcrc);
 
     chIQInit(&g_iqp, g_comm_iqp_buf, COMM_IQP_BUF_SIZE, NULL);
 
@@ -361,7 +383,7 @@ void CommInit(void)
         return;
     }
 
-    osThreadDef(CommTask, CommStartTask, osPriorityAboveNormal, 0, 1024);
+    osThreadDef(CommTask, CommStartTask, osPriorityNormal, 0, 1024);
     CommTaskHandle = osThreadCreate(osThread(CommTask), NULL);
     if (NULL == CommTaskHandle)
     {
@@ -463,7 +485,10 @@ void CommUartRxIrqProcess(UART_HandleTypeDef *huart)
 
     g_dbgUartRxCnt++;
     b = huart->Instance->DR & 0xff;
-    chIQPutI(&g_iqp, b);
+    if (Q_OK != chIQPutI(&g_iqp, b))
+    {
+        printf("enqueue failed.\r\n");
+    }
     return;
 }
 
@@ -475,6 +500,33 @@ void CommShowCnt(void)
 
 void USART2_IRQHandler(void)
 {
-    CommUartIrqHandler(&huart2);
+    uint16_t sr = huart2.Instance->SR;
+
+    while (sr & (USART_SR_RXNE | USART_SR_ORE | USART_SR_NE | USART_SR_FE |
+               USART_SR_PE)) 
+    {
+        uint8_t b;
+
+        /* Error condition detection.*/
+        if (sr & (USART_SR_ORE | USART_SR_NE | USART_SR_FE  | USART_SR_PE))
+        {
+            printf("uart error 0x%x!\r\n", sr);
+        }
+
+        b = huart2.Instance->DR;
+        if (sr & USART_SR_RXNE)
+        {
+            if (Q_OK != chIQPutI(&g_iqp, b))
+            {
+                printf("enqueue failed.\r\n");
+            }
+        }
+        sr = huart2.Instance->SR;
+    }
+    //CommUartIrqHandler(&huart2);
 }
 
+void CommPrintMsg(size_t len)
+{
+    printf("msglen:%d, msg:%02x %02x %02x %02x %08x\r\n", len, msg.sof, msg.msg_id, msg.size, msg.res, msg.crc);
+}

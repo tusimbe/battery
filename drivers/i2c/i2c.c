@@ -41,7 +41,7 @@ int32_t i2c_init(I2C_INSTANCE_STRU *i2c, I2C_WIRE_STRU *i2c_wire)
     i2c->wire.scl.port     = i2c_wire->scl.port;
     i2c->wire.scl.port_num = i2c_wire->scl.port_num;
 
-    GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+    GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_OD;
     GPIO_InitStruct.Pin = i2c_wire->scl.port_num;
     GPIO_InitStruct.Pull = GPIO_PULLUP;
     GPIO_InitStruct.Speed = GPIO_SPEED_HIGH;

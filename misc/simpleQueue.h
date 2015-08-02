@@ -293,7 +293,7 @@ extern "C" {
   void chIQResetI(InputQueue *iqp);
   int32_t chIQPutI(InputQueue *iqp, uint8_t b);
   int32_t chIQGet(InputQueue *iqp);
-  size_t chIQRead(InputQueue *iqp, uint8_t *bp, size_t n);
+  int32_t chIQRead(InputQueue *iqp, uint8_t *bp, size_t n);
 #ifdef __cplusplus
 }
 #endif

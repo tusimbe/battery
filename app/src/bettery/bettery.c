@@ -9,6 +9,7 @@
 #include "bq40z50.h"
 #include "bettery.h"
 #include <stdio.h>
+#include <string.h>
 
 #define BATTERY_TASK_RUNNING_CYCLE    (100)
 #define BATTERY_SMBUS_ADDR            (0x16)
@@ -40,7 +41,7 @@ void batteryInit(void)
 {
     bq40z50_init();
     
-    osThreadDef(batteryTaskThread, batteryTask, osPriorityHigh, 0, 1024);
+    osThreadDef(batteryTaskThread, batteryTask, osPriorityAboveNormal, 0, 1024);
     batteryTaskHandle = osThreadCreate(osThread(batteryTaskThread), NULL);
     if (NULL == batteryTaskHandle)
     {
@@ -64,14 +65,19 @@ void batteryTask(void const * argument)
 void batteryInfoUpdate(void)
 {
     uint16_t i;
+    int16_t ret;
+    uint16_t val;
     
     for (i = 0; i < battery_regs_size; i++)
     {
         switch (bettery_regs[i].len)
         {
             case BETT_REG_LEN_WORD:
-                bettery_regs[i].value = 
-                    bq40z50_word_read(BATTERY_SMBUS_ADDR, bettery_regs[i].cmd);
+                ret = bq40z50_word_read(BATTERY_SMBUS_ADDR, bettery_regs[i].cmd, &val);
+                if (ret == 0) 
+                {
+                    bettery_regs[i].value = val;
+                }
                 break;
             default:
                 break;
@@ -81,6 +87,8 @@ void batteryInfoUpdate(void)
 
 int16_t batteryInfoGet(uint16_t addr, uint8_t *buffer, uint16_t buf_len)
 {
+    buf_len = buf_len;
+
     if (addr >= battery_regs_size)
     {
         return -1;
@@ -96,7 +104,6 @@ void batteryInfoShow(void)
     uint16_t i;
 
     printf("battery info:\r\n");
-    
     for (i = 0; i < battery_regs_size; i++)
     {
         printf("%s : %d\r\n", bettery_regs[i].name, bettery_regs[i].value);

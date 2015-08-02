@@ -177,7 +177,7 @@ int32_t chIQGet(InputQueue *iqp)
  *
  * @api
  */
-size_t chIQRead(InputQueue *iqp, uint8_t *bp, size_t n) 
+int32_t chIQRead(InputQueue *iqp, uint8_t *bp, size_t n) 
 {
     size_t r = 0;
     uint32_t flag;

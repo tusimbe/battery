@@ -225,8 +225,9 @@ void StartDefaultTask(void const * argument)
     {
         osDelay(1000);
         HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_8);
-        //batteryInfoShow();
-        CommShowCnt();
+        batteryInfoShow();
+        //CommShowCnt();
+        //smb_errorShow();
     }
 
     /* USER CODE END 5 */ 
