@@ -57,10 +57,19 @@
 CONFIG_ARCH = CORTEXM3
 include ./makefiles/toolchain.mk
 
-# The pre-processor and compiler options.
-MY_CFLAGS =
+# The release version
+ifeq ($(VER),)
+  VER = DEBUG
+endif
 
- 
+
+# The pre-processor and compiler options.
+ifeq ($(VER), DEBUG)
+  MY_CFLAGS = -DSTM32F103xE
+else
+  MY_CFLAGS = -DSTM32F103xB
+endif
+
 # The linker options.
 MY_LIBS   =
  
@@ -83,6 +92,7 @@ SRCDIRS   = ./freertos/src \
             ./target/miniv3 \
             ./drivers/flash/src \
             ./drivers/i2c \
+	    ./drivers/i2c_hw \
             ./drivers/bq40z50 \
             ./app/src/bettery \
             ./app/src/comm \
@@ -97,15 +107,21 @@ INCDIRS  = -I./freertos/inc \
            -I./drivers/flash/inc \
            -I./drivers/lcd/inc \
            -I./drivers/i2c \
+	   -I./drivers/i2c_hw \
            -I./drivers/bq40z50 \
 	   -I./misc 
 
 # The ld scripts
-LDSCRIPT = ./script/STM32F103XE_FLASH.ld
- 
+ifeq ($(VER), DEBUG)
+  SRCDIRS += ./drivers/CMSIS/src/stm32f103xe 
+  LDSCRIPT = ./script/STM32F103XE_FLASH.ld
+else
+  SRCDIRS += ./drivers/CMSIS/src/stm32f103xb 
+  LDSCRIPT = ./script/STM32F103XB_FLASH.ld
+endif
 # The executable file name.
 # If not specified, current directory name or `a.out' will be used.
-PROGRAM   = bettery
+PROGRAM   = battery
 
  
 ## Implicit Section: change the following only when necessary.

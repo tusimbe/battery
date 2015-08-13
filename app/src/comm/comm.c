@@ -167,7 +167,7 @@ static void CommProcessCommand(const PMessage pMsg)
     switch (pMsg->msg_id)
     {
     case 'v': /* Reads new sensor settings; */
-        batteryInfoGet(1, (uint8_t *)&regValue, sizeof(uint16_t));
+        batteryInfoGet(0, (uint8_t *)&regValue, sizeof(uint16_t));
         memset(&pMsg->data, 0, COMM_BUFFER_SIZE);
         memcpy(&pMsg->data, &regValue, sizeof(uint16_t));
         pMsg->size = sizeof(uint16_t) + COMM_MSG_SVC_SIZE;
@@ -181,12 +181,19 @@ static void CommProcessCommand(const PMessage pMsg)
         pMsg->crc = CommGetCRC32Checksum(pMsg);
         break;
     case 'p':
-        batteryInfoGet(5, (uint8_t *)&regValue, sizeof(uint16_t));
+        batteryInfoGet(4, (uint8_t *)&regValue, sizeof(uint16_t));
         memset(&pMsg->data, 0, COMM_BUFFER_SIZE);
         memcpy(&pMsg->data, &regValue, sizeof(uint16_t));
         pMsg->size = sizeof(uint16_t) + COMM_MSG_SVC_SIZE;
         pMsg->crc = CommGetCRC32Checksum(pMsg);
         break;
+    case 'r':
+        batteryInfoGet(5, (uint8_t *)&regValue, sizeof(uint16_t));
+        memset(&pMsg->data, 0, COMM_BUFFER_SIZE);
+        memcpy(&pMsg->data, &regValue, sizeof(uint16_t));
+        pMsg->size = sizeof(uint16_t) + COMM_MSG_SVC_SIZE;
+        pMsg->crc = CommGetCRC32Checksum(pMsg);
+        break;         
     case 's':
         CommPositiveResponse(pMsg);
         break;
