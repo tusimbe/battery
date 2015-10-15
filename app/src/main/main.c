@@ -40,6 +40,8 @@
 #include "user_diskio.h" /* defines USER_Driver as external */
 #include "bettery.h"
 #include "comm.h"
+#include "key.h"
+#include "wd.h"
 #include <stdio.h>
 #include <string.h>
 /* USER CODE BEGIN Includes */
@@ -48,6 +50,7 @@
 
 /* Private variables ---------------------------------------------------------*/
 UART_HandleTypeDef huart1;
+TIM_HandleTypeDef htim2;
 
 osThreadId defaultTaskHandle;
 
@@ -63,9 +66,8 @@ void _init (void);
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_USART1_UART_Init(void);
+static void MX_TIM2_Init(void);
 void StartDefaultTask(void const * argument);
-void HAL_TIM_IC_OverFlowCallback(TIM_HandleTypeDef *htim);
-void HAL_TIM_UpCallback(TIM_HandleTypeDef *htim);
 
 /* USER CODE BEGIN PFP */
 
@@ -77,6 +79,7 @@ void HAL_TIM_UpCallback(TIM_HandleTypeDef *htim);
 
 int main(void)
 {
+    KEY_CONF key_confs[2];
 
     /* USER CODE BEGIN 1 */
 
@@ -94,6 +97,7 @@ int main(void)
     MX_GPIO_Init();
     CommInit();
     MX_USART1_UART_Init();
+    MX_TIM2_Init();
 
     /* USER CODE BEGIN 2 */
 
@@ -111,6 +115,14 @@ int main(void)
     /* start timers, add new ones, ... */
     /* USER CODE END RTOS_TIMERS */
     //__enable_irq();
+    key_confs[0].GPIO = GPIOC;
+    key_confs[0].pin  = GPIO_PIN_5;
+
+    key_confs[1].GPIO = GPIOA;
+    key_confs[1].pin  = GPIO_PIN_15;
+
+    key_init(key_confs, 2);
+    wd_init();
     batteryInit();
     printf("system init ok, create tasks ...\r\n");
 
@@ -186,6 +198,26 @@ void MX_USART1_UART_Init(void)
     HAL_UART_Init(&huart1);
 }
 
+void MX_TIM2_Init(void)
+{
+    TIM_ClockConfigTypeDef sClockSourceConfig;
+
+    htim2.Instance = TIM2;
+    htim2.Init.Prescaler = 72 - 1; /* 1MHZ */
+    htim2.Init.CounterMode = TIM_COUNTERMODE_UP;
+    htim2.Init.Period = 50000;     /* 50 ms per UE */
+    htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+
+    HAL_TIM_Base_Init(&htim2);
+
+    sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
+    HAL_TIM_ConfigClockSource(&htim2, &sClockSourceConfig);
+
+    HAL_NVIC_SetPriority(TIM2_IRQn, configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY + 1, 0);
+    HAL_NVIC_EnableIRQ(TIM2_IRQn);
+
+    return;
+}
 /** Pinout Configuration
 */
 void MX_GPIO_Init(void)
@@ -219,6 +251,8 @@ void StartDefaultTask(void const * argument)
     retUSER = FATFS_LinkDriver(&USER_Driver, USER_Path);
 
     /* USER CODE BEGIN 5 */
+    HAL_TIM_Base_Start_IT(&htim2);
+    //(void)wd_start();
     
     /* Infinite loop */
     for(;;)
@@ -231,6 +265,14 @@ void StartDefaultTask(void const * argument)
     }
 
     /* USER CODE END 5 */ 
+}
+
+void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
+{
+    if (htim->Instance == TIM2)
+    {
+        //key_scan();
+    }
 }
 
 void _init (void)

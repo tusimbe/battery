@@ -10,6 +10,7 @@
 #include "bettery.h"
 #include "simpleQueue.h"
 #include "sys.h"
+#include "key.h"
 
 /* C libraries: */
 #include <string.h>
@@ -353,6 +354,7 @@ void CommStartTask(void const *argument)
     for (;;)
     {
         osDelay(10);
+        key_scan();
         CommReadSerialData();
     }
 }

@@ -112,15 +112,28 @@ int16_t bq40z50_block_read(uint8_t addr, uint8_t cmd, uint8_t *buf, uint8_t buf_
     return bufflen;
 }
 
-void bq40z50_word_write(uint8_t addr, uint8_t cmd, uint8_t *buf)
+int16_t bq40z50_word_write(uint8_t addr, uint8_t cmd, uint16_t word)
 {
-    addr = addr;
-    cmd = cmd;
-    buf = buf;
+    uint8_t buff[4]; 
+
+    buff[0] = cmd;
+    memcpy(&buff[1], &word, 2);
+    buff[3] = smb_getPec(addr, cmd, 0, &word, 2);
+
+    int ret = i2c_transfer(addr, buff, 4, NULL, 0);
+    if (OK == ret)
+    {
+        /* do nothing */
+    }
+    else
+    {
+        printf("[bq40z50_word_write] i2c_transfer failed return %d\r\n", ret);
+    }
+
     return;
 }
 
-void bq40z50_block_write(uint8_t addr, uint8_t cmd, uint8_t *buf, uint8_t len)
+int16_t bq40z50_block_write(uint8_t addr, uint8_t cmd, uint8_t *buf, uint8_t len)
 {
     addr = addr;
     cmd = cmd;

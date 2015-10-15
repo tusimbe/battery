@@ -96,6 +96,7 @@ SRCDIRS   = ./freertos/src \
             ./drivers/bq40z50 \
             ./app/src/bettery \
             ./app/src/comm \
+	    ./app/src/wd \
 	    ./misc 
 
 # The include directiories

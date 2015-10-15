@@ -2858,7 +2858,6 @@ void HAL_TIM_IRQHandler(TIM_HandleTypeDef *htim)
         if(__HAL_TIM_GET_IT_SOURCE(htim, TIM_IT_CC1) !=RESET)
         {
             __HAL_TIM_CLEAR_IT(htim, TIM_IT_CC1);
-            HAL_TIM_IC_OverFlowCallback(htim);
         }
     }
 }
