@@ -1937,7 +1937,7 @@ void stm32_configgpio(GPIO_TypeDef *port, uint32_t pin)
 
 static void up_enable_irq(IRQn_Type irq)
 {
-    HAL_NVIC_SetPriority(irq, configLIBRARY_LOWEST_INTERRUPT_PRIORITY, 0);
+    HAL_NVIC_SetPriority(irq, configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY + 1, 0);
     HAL_NVIC_EnableIRQ(irq);
 }
 

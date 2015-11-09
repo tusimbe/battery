@@ -6,6 +6,7 @@
 #include "stm32_i2c.h"
 #include <stdio.h>
 
+#define I2C_RETRY_TIMES     (3)
 struct i2c_dev_s	*dev;
 
 int32_t i2c_init(uint8_t i2c_dev_num)
@@ -68,12 +69,12 @@ int32_t i2c_transfer(uint8_t addr, const uint8_t *send, unsigned send_len, uint8
 			break;
 
 		/* if we have already retried once, or we are going to give up, then reset the bus */
-		if (retry_count >= 1)
+		if (retry_count >= I2C_RETRY_TIMES)
         {
 			up_i2creset(dev);
         }
 
-	} while (retry_count++ < 0);
+	} while (retry_count++ < I2C_RETRY_TIMES);
 
 	return ret;
 

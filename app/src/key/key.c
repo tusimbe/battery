@@ -2,15 +2,21 @@
 #include "cmsis_os.h"
 #include "key.h"
 #include "errno.h"
+#include "bettery.h"
+#include <stdio.h>
 
 #define KEY_UNSTEABLE_TIME      (2)        /* 20ms */
-#define KEY_LONG_PRESS_TIME     (300)      /* 3s   */
+#define KEY_LONG_PRESS_TIME     (200)       /* 2s   */
 
 /* local functions */
 int16_t key_release(uint32_t key, uint32_t timer_cnt);
 int16_t key_read(uint32_t key);
+int16_t key_waiting(uint32_t key, uint32_t timer_cnt);
+void    key_scan_task(void const *argument);
 
 KEY_INFO g_keys[KEY_NUM_IN_SYSTEM];
+int32_t battery_status = 0;
+osThreadId key_task_handler;
 
 void key_init(KEY_CONF key_conf[], uint32_t num_of_key)
 {
@@ -25,18 +31,37 @@ void key_init(KEY_CONF key_conf[], uint32_t num_of_key)
         g_keys[i].timer_cnt = 0;
         g_keys[i].read_func = key_read;
         g_keys[i].press_cb_func = NULL;
-        g_keys[i].release_cb_func = key_release;
+        g_keys[i].waiting_cb_func = key_waiting;
+        g_keys[i].release_cb_func = NULL;
 
         GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
         GPIO_InitStruct.Pin = key_conf[i].pin;
-        GPIO_InitStruct.Pull = GPIO_PULLUP;
+        GPIO_InitStruct.Pull = GPIO_PULLDOWN;
         GPIO_InitStruct.Speed = GPIO_SPEED_HIGH;
         HAL_GPIO_Init(key_conf[i].GPIO, &GPIO_InitStruct);
 
         g_keys[i].valid = 1;
     }
+
+    osThreadDef(key_task, key_scan_task, osPriorityNormal, 0, 512);
+    key_task_handler = osThreadCreate(osThread(key_task), NULL);
+    if (NULL == key_task_handler)
+    {
+        printf("[%s, L%d] create thread failed!\r\n", __FILE__, __LINE__);
+        return;
+    }
  
     return;
+}
+
+void key_scan_task(void const *argument)
+{
+    argument = argument;
+    for (;;)
+    {
+        osDelay(10);
+        key_scan();
+    }
 }
 
 int16_t key_read(uint32_t key)
@@ -53,7 +78,7 @@ int16_t key_read(uint32_t key)
     }
 
     st = HAL_GPIO_ReadPin(g_keys[key].GPIO, g_keys[key].pin);
-    if (st == GPIO_PIN_RESET)
+    if (st == GPIO_PIN_SET)
     {
         return KEY_DOWN;
     }
@@ -61,6 +86,22 @@ int16_t key_read(uint32_t key)
     {
         return KEY_UP;
     }
+}
+
+int16_t key_waiting(uint32_t key, uint32_t timer_cnt)
+{
+    //printf("key waiting cnt: %d\r\n", (int)timer_cnt);
+    if (timer_cnt == KEY_LONG_PRESS_TIME)
+    {
+        printf("catch key %d long press!\r\n", (int)key);
+        printf("Led turn.\r\n");
+        batteryLedDisplayEnDis();
+        osDelay(1000);
+        printf("trun fet.\r\n");
+        batteryEnterShutdown();
+    }
+
+    return OK;
 }
 
 int16_t key_release(uint32_t key, uint32_t timer_cnt)
@@ -74,11 +115,16 @@ int16_t key_release(uint32_t key, uint32_t timer_cnt)
 
     if (isLongPress)
     {
-        printf("catch key %d long press!\r\n", key);
+        printf("catch key %d long press!\r\n", (int)key);
+        printf("Led turn.\r\n");
+        batteryLedDisplayEnDis();
+        //osDelay(1000);
+        printf("trun fet.\r\n");
+        batteryEnterShutdown();
     }
     else
     {
-        printf("catch key %d short press!\r\n", key);
+        printf("catch key %d short press!\r\n", (int)key);
     }
 
     return OK;
@@ -105,7 +151,7 @@ int16_t key_scan(void)
         key_st = g_keys[i].read_func(i);
         if (key_st < 0)
         {
-            printf("read key %d return errno %d\r\n", i, key_st);
+            printf("read key %d return errno %d\r\n", (int)i, (int)key_st);
         }
 
         switch (g_keys[i].state)
@@ -137,6 +183,11 @@ int16_t key_scan(void)
             break;
         case KEY_STATE_WAITING:
             g_keys[i].timer_cnt++;
+            if (g_keys[i].waiting_cb_func != NULL)
+            {
+                g_keys[i].waiting_cb_func(i, g_keys[i].timer_cnt);
+            }
+
             if (key_st == KEY_UP)
             {
                 g_keys[i].state = KEY_STATE_RELEASE;

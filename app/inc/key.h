@@ -23,6 +23,7 @@ typedef int16_t (*KEY_READ_FUNCPTR)(uint32_t key);
 /* key state call back function */
 typedef int16_t (*KEY_PRESS_CB_FUNCPTR)(uint32_t key);
 typedef int16_t (*KEY_RELEASE_CB_FUNCPTR)(uint32_t key, uint32_t timer_cnt);
+typedef int16_t (*KEY_WAITING_CB_FUNCPTR)(uint32_t key, uint32_t timer_cnt);
 
 typedef struct key_conf_s
 {
@@ -40,6 +41,7 @@ typedef struct key_info_s
     GPIO_TypeDef *GPIO;
     KEY_READ_FUNCPTR read_func;
     KEY_PRESS_CB_FUNCPTR press_cb_func;
+    KEY_WAITING_CB_FUNCPTR waiting_cb_func;
     KEY_RELEASE_CB_FUNCPTR release_cb_func;
 } KEY_INFO;
 

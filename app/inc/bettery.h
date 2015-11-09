@@ -23,5 +23,6 @@ void batteryInfoShow(void);
 int16_t batteryInfoGet(uint16_t addr, uint8_t *buffer, uint16_t buf_len);
 int16_t batteryEnterShutdown(void);
 int16_t batteryExitShutdown(void);
+void batteryLedDisplayEnDis(void);
 
 #endif

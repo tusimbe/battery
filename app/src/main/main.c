@@ -115,20 +115,17 @@ int main(void)
     /* start timers, add new ones, ... */
     /* USER CODE END RTOS_TIMERS */
     //__enable_irq();
-    key_confs[0].GPIO = GPIOC;
-    key_confs[0].pin  = GPIO_PIN_5;
+    key_confs[0].GPIO = GPIOA;
+    key_confs[0].pin  = GPIO_PIN_8;
 
-    key_confs[1].GPIO = GPIOA;
-    key_confs[1].pin  = GPIO_PIN_15;
-
-    key_init(key_confs, 2);
+    key_init(key_confs, 1);
     wd_init();
     batteryInit();
     printf("system init ok, create tasks ...\r\n");
 
     /* Create the thread(s) */
     /* definition and creation of defaultTask */
-    osThreadDef(defaultTask, StartDefaultTask, osPriorityNormal, 0, 512);
+    osThreadDef(defaultTask, StartDefaultTask, osPriorityLow, 0, 512);
     defaultTaskHandle = osThreadCreate(osThread(defaultTask), NULL);
 
 
