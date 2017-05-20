@@ -48,6 +48,14 @@
 
 /* USER CODE END Includes */
 
+#define LED_CHAR1   GPIO_PIN_4
+#define LED_CHAR2   GPIO_PIN_5
+#define LED_CHAR3   GPIO_PIN_6
+#define LED_CHAR4   GPIO_PIN_7
+
+#define LED_CHAR_ON(number)  HAL_GPIO_WritePin(GPIOA, number, GPIO_PIN_RESET)
+#define LED_CHAR_OFF(number) HAL_GPIO_WritePin(GPIOA, number, GPIO_PIN_SET)
+
 /* Private variables ---------------------------------------------------------*/
 UART_HandleTypeDef huart1;
 TIM_HandleTypeDef htim2;
@@ -68,7 +76,12 @@ static void MX_GPIO_Init(void);
 static void MX_USART1_UART_Init(void);
 static void MX_TIM2_Init(void);
 void StartDefaultTask(void const * argument);
-
+void led_char_all_off(void);
+void led_remind_more_75percent(void);
+void led_remind_more_50percent(void);
+void led_remind_more_25percent(void);
+void led_remind_more_0percent(void);
+void led_battery_charge_display(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -79,7 +92,7 @@ void StartDefaultTask(void const * argument);
 
 int main(void)
 {
-    KEY_CONF key_confs[2];
+    //KEY_CONF key_confs[2];
 
     /* USER CODE BEGIN 1 */
 
@@ -95,9 +108,9 @@ int main(void)
 
     /* Initialize all configured peripherals */
     MX_GPIO_Init();
-    CommInit();
+    //CommInit();
     MX_USART1_UART_Init();
-    MX_TIM2_Init();
+    //MX_TIM2_Init();
 
     /* USER CODE BEGIN 2 */
 
@@ -114,12 +127,12 @@ int main(void)
     /* USER CODE BEGIN RTOS_TIMERS */
     /* start timers, add new ones, ... */
     /* USER CODE END RTOS_TIMERS */
-    //__enable_irq();
-    key_confs[0].GPIO = GPIOA;
-    key_confs[0].pin  = GPIO_PIN_8;
+    __enable_irq();
+    //key_confs[0].GPIO = GPIOA;
+    //key_confs[0].pin  = GPIO_PIN_8;
 
-    key_init(key_confs, 1);
-    wd_init();
+    //key_init(key_confs, 1);
+    //wd_init();
     batteryInit();
     printf("system init ok, create tasks ...\r\n");
 
@@ -148,7 +161,7 @@ int main(void)
     /* Infinite loop */
     while (1)
     {
-        
+
     }
     /* USER CODE END 3 */
 
@@ -227,17 +240,114 @@ void MX_GPIO_Init(void)
     __GPIOC_CLK_ENABLE();
     __GPIOD_CLK_ENABLE();
 
-    /* LED 0 */
+    /* FLASH LED */
     GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-    GPIO_InitStruct.Pin = GPIO_PIN_8;
+    GPIO_InitStruct.Pin = GPIO_PIN_3;
     GPIO_InitStruct.Pull = GPIO_PULLUP;
     GPIO_InitStruct.Speed = GPIO_SPEED_HIGH;
     HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+    HAL_GPIO_WritePin(GPIOA, GPIO_PIN_3, GPIO_PIN_RESET);
 
-    HAL_GPIO_WritePin(GPIOA, GPIO_PIN_8, GPIO_PIN_SET);
+    /* CHAR1 LED */
+    GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_OD;
+    GPIO_InitStruct.Pin = LED_CHAR1;
+    GPIO_InitStruct.Pull = GPIO_PULLUP;
+    GPIO_InitStruct.Speed = GPIO_SPEED_HIGH;
+    HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+    HAL_GPIO_WritePin(GPIOA, LED_CHAR1, GPIO_PIN_RESET);
+
+    /* CHAR2 LED */
+    GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_OD;
+    GPIO_InitStruct.Pin = LED_CHAR2;
+    GPIO_InitStruct.Pull = GPIO_PULLUP;
+    GPIO_InitStruct.Speed = GPIO_SPEED_HIGH;
+    HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+    HAL_GPIO_WritePin(GPIOA, LED_CHAR2, GPIO_PIN_RESET);
+
+    /* CHAR3 LED */
+    GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_OD;
+    GPIO_InitStruct.Pin = LED_CHAR3;
+    GPIO_InitStruct.Pull = GPIO_PULLUP;
+    GPIO_InitStruct.Speed = GPIO_SPEED_HIGH;
+    HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+    HAL_GPIO_WritePin(GPIOA, LED_CHAR3, GPIO_PIN_RESET);
+
+    /* CHAR4 LED */
+    GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_OD;
+    GPIO_InitStruct.Pin = LED_CHAR4;
+    GPIO_InitStruct.Pull = GPIO_PULLUP;
+    GPIO_InitStruct.Speed = GPIO_SPEED_HIGH;
+    HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+    HAL_GPIO_WritePin(GPIOA, LED_CHAR4, GPIO_PIN_RESET);
     return;
 }
 
+void led_char_all_off(void)
+{
+    LED_CHAR_OFF(LED_CHAR1);
+    LED_CHAR_OFF(LED_CHAR2);
+    LED_CHAR_OFF(LED_CHAR3);
+    LED_CHAR_OFF(LED_CHAR4);
+}
+
+void led_remind_more_75percent(void)
+{
+    LED_CHAR_ON(LED_CHAR1);
+    LED_CHAR_ON(LED_CHAR2);
+    LED_CHAR_ON(LED_CHAR3);
+    LED_CHAR_ON(LED_CHAR4);
+}
+
+void led_remind_more_50percent(void)
+{
+    LED_CHAR_ON(LED_CHAR1);
+    LED_CHAR_ON(LED_CHAR2);
+    LED_CHAR_ON(LED_CHAR3);
+    LED_CHAR_OFF(LED_CHAR4);
+}
+
+void led_remind_more_25percent(void)
+{
+    LED_CHAR_ON(LED_CHAR1);
+    LED_CHAR_ON(LED_CHAR2);
+    LED_CHAR_OFF(LED_CHAR3);
+    LED_CHAR_OFF(LED_CHAR4);
+}
+
+void led_remind_more_0percent(void)
+{
+    LED_CHAR_ON(LED_CHAR1);
+    LED_CHAR_OFF(LED_CHAR2);
+    LED_CHAR_OFF(LED_CHAR3);
+    LED_CHAR_OFF(LED_CHAR4);
+}
+
+void led_battery_charge_display(void)
+{
+    int16_t percent;
+    int16_t ret;
+
+    ret = batteryInfoGet(3, (uint8_t *)&percent, sizeof(int16_t));
+    if (ret == sizeof(int16_t))
+    {
+        if (percent > 75)
+        {
+            led_remind_more_75percent();
+        }
+        else if (percent > 50)
+        {
+            led_remind_more_50percent();
+        }
+        else if (percent > 25)
+        {
+            led_remind_more_25percent();
+        }
+        else
+        {
+            led_remind_more_0percent();
+        }
+    }
+}
 /* USER CODE BEGIN 4 */
 
 /* USER CODE END 4 */
@@ -248,17 +358,19 @@ void StartDefaultTask(void const * argument)
     retUSER = FATFS_LinkDriver(&USER_Driver, USER_Path);
 
     /* USER CODE BEGIN 5 */
-    HAL_TIM_Base_Start_IT(&htim2);
+    //HAL_TIM_Base_Start_IT(&htim2);
     //(void)wd_start();
-    
+
     /* Infinite loop */
     for(;;)
     {
         osDelay(1000);
-        HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_8);
+        HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_3);
         batteryInfoShow();
+        led_battery_charge_display();
         //CommShowCnt();
         //smb_errorShow();
+        printf("default task is running..\r\n");
     }
 
     /* USER CODE END 5 */ 

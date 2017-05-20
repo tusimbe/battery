@@ -13,32 +13,32 @@
 #include <string.h>
 
 #define BATTERY_TASK_RUNNING_CYCLE    (1007)
-#define BATTERY_SMBUS_ADDR            (0x16)
-
+#define BATTERY_SMBUS_ADDR_MIN        (0x08)
+#define BATTERY_SMBUS_ADDR_MAX        (0x7f)
 #define BATTERY_BLOCK_BUF_LEN         (32)
 
 BETT_REG_ENTRY bettery_regs[] =
 {
-    { "Temperature", 0x72, 14, 0, BETT_REG_TYPE_BLOCK, 65536, 0 },
+    //{ "Temperature", 0x72, 14, 0, BETT_REG_TYPE_BLOCK, 65536, 0 },
     { "Voltage", 0x09, BETT_REG_LEN_WORD, 0, BETT_REG_TYPE_UWORD, 65536, 0 },
     { "Current", 0x0a, BETT_REG_LEN_WORD, 0, 1, 32768, 0 },
     { "AverageCurrent", 0x0b, BETT_REG_LEN_WORD, 0, 1, 32768, 0 },
     { "RelativeStateOfChange", 0x0d, BETT_REG_LEN_WORD, 0, BETT_REG_TYPE_UWORD, 100, 0 },
     { "RemainingCapacity", 0x0f, BETT_REG_LEN_WORD, 0, BETT_REG_TYPE_UWORD, 65536, 0 },
-    { "Cell 1", 0x3f, BETT_REG_LEN_WORD, 0, BETT_REG_TYPE_UWORD, 65535, 0 },
-    { "Cell 2", 0x3e, BETT_REG_LEN_WORD, 0, BETT_REG_TYPE_UWORD, 65535, 0 },
-    { "Cell 3", 0x3d, BETT_REG_LEN_WORD, 0, BETT_REG_TYPE_UWORD, 65536, 0 },
-    { "Cell 4", 0x3c, BETT_REG_LEN_WORD, 0, BETT_REG_TYPE_UWORD, 65536, 0 },
+    //{ "Cell 1", 0x3f, BETT_REG_LEN_WORD, 0, BETT_REG_TYPE_UWORD, 65535, 0 },
+    //{ "Cell 2", 0x3e, BETT_REG_LEN_WORD, 0, BETT_REG_TYPE_UWORD, 65535, 0 },
+    //{ "Cell 3", 0x3d, BETT_REG_LEN_WORD, 0, BETT_REG_TYPE_UWORD, 65536, 0 },
+    //{ "Cell 4", 0x3c, BETT_REG_LEN_WORD, 0, BETT_REG_TYPE_UWORD, 65536, 0 },
     //{ "Device name", 0x21, 7, 0, BETT_REG_TYPE_BLOCK, 65536, 0 }
 };
 
 uint32_t battery_regs_size = sizeof(bettery_regs) / sizeof(bettery_regs[0]);
 
 osThreadId batteryTaskHandle;
-
+uint8_t g_batterySmbAddr;
 void batteryTask(void const *argument);
 void batteryInfoUpdate(void);
-
+int32_t batterySearch(void);
 
 void batteryInit(void)
 {
@@ -54,10 +54,37 @@ void batteryInit(void)
     return;
 }
 
+int32_t batterySearch(void)
+{
+    uint8_t i;
+    int16_t val;
+    int32_t ret = -1;
+
+    printf("battery search begin.\r\n");
+    for(i = BATTERY_SMBUS_ADDR_MIN; i < BATTERY_SMBUS_ADDR_MAX; i++)
+    {
+        if (bq40z50_word_read(i, 0x09, &val) == 0)
+        {
+            g_batterySmbAddr = i;
+            printf("search battery get smbus addr %02x.\r\n", i);
+            ret = 0;
+            break;
+        }
+    }
+
+    if (ret != 0)
+    {
+        printf("search no battery.\r\n");
+    }
+
+    return ret;
+}
+
 void batteryTask(void const *argument)
 {
     argument = argument;
 
+    batterySearch();
     for (;;)
     {
         osDelay(BATTERY_TASK_RUNNING_CYCLE);
@@ -79,7 +106,7 @@ void batteryInfoUpdate(void)
         {
         case BETT_REG_TYPE_UWORD:
         case BETT_REG_TYPE_SWORD:
-            ret = bq40z50_word_read(BATTERY_SMBUS_ADDR, bettery_regs[i].cmd, &val);
+            ret = bq40z50_word_read(g_batterySmbAddr, bettery_regs[i].cmd, &val);
             if (ret == 0)
             {
                 bettery_regs[i].value = val;
@@ -105,7 +132,7 @@ void batteryInfoUpdate(void)
             }
             break;
         case BETT_REG_TYPE_BLOCK:
-            ret = bq40z50_block_read(BATTERY_SMBUS_ADDR, bettery_regs[i].cmd, buf, BATTERY_BLOCK_BUF_LEN, 1);
+            ret = bq40z50_block_read(g_batterySmbAddr, bettery_regs[i].cmd, buf, BATTERY_BLOCK_BUF_LEN, 1);
             if (ret > 0)
             {
                 if (ret == bettery_regs[i].len)
@@ -168,7 +195,7 @@ int16_t batteryEnterShutdown(void)
     int16_t  ret;
 
     word = 0x0022;
-    ret = bq40z50_word_write(BATTERY_SMBUS_ADDR, 0x00, word);
+    ret = bq40z50_word_write(g_batterySmbAddr, 0x00, word);
     if (OK != ret)
     {
         printf("[%s, L%d] bq40z50_word_write ret %d\r\n", __FILE__, __LINE__, ret);
@@ -183,7 +210,7 @@ void batteryLedDisplayEnDis(void)
     int16_t  ret;
 
     word = 0x0027;
-    ret = bq40z50_word_write(BATTERY_SMBUS_ADDR, 0x00, word);
+    ret = bq40z50_word_write(g_batterySmbAddr, 0x00, word);
     if (OK != ret)
     {
         printf("[%s, L%d] bq40z50_word_write ret %d\r\n", __FILE__, __LINE__, ret);
@@ -198,7 +225,7 @@ int16_t batteryExitShutdown(void)
     int16_t  ret;
 
     word = 0x0022;
-    ret = bq40z50_word_write(BATTERY_SMBUS_ADDR, 0x00, word);
+    ret = bq40z50_word_write(g_batterySmbAddr, 0x00, word);
     if (OK != ret)
     {
         printf("[%s, L%d] bq40z50_word_write ret %d\r\n", __FILE__, __LINE__, ret);

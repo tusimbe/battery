@@ -41,7 +41,7 @@
  * Included Files
  ************************************************************************************/
 #define FAR
-#define CONFIG_STM32_I2C2
+#define CONFIG_STM32_I2C1
 #define STM32_PCLK1_FREQUENCY   36000000
 #define CONFIG_STM32_STM32F10XX
 #define CONFIG_I2C_TRANSFER

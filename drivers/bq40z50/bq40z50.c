@@ -10,7 +10,7 @@
 
 #define BATT_SMBUS_PEC_POLYNOMIAL   (0x7)
 #define GUGAS_BLOCK_BUFF_MAX        (42)
-#define BATT_SMBUS_NUM              (2)
+#define BATT_SMBUS_NUM              (1)
 
 uint8_t smb_getPec(uint8_t addr, uint8_t cmd, uint8_t reading, uint8_t *buf, uint8_t len);
 
