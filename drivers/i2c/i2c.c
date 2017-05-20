@@ -71,7 +71,7 @@ int32_t i2c_transfer(uint8_t addr, const uint8_t *send, unsigned send_len, uint8
 		/* if we have already retried once, or we are going to give up, then reset the bus */
 		if (retry_count >= I2C_RETRY_TIMES)
         {
-            osDelay(1000);
+            //osDelay(1000);
 			up_i2creset(dev);
         }
 
